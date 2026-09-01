@@ -1,0 +1,49 @@
+{
+  "summary": "Full backend + frontend regression of the Latin Quarter fork. Backend: created /app/backend/tests/test_latin_rebrand_smoke.py (42 tests) — 41 pass, 1 fail (fixed-fees master truncated to 200 of 272). Verified health, both logins (admin@fundle.ai, marketing@fundle.ai), JWT protection, legacy admin@kazo.com removed, uploads=2 (42,550 sales / 28,537 settlement), sales=42,550, calculations=42,550, settlement=28,537, discrepancies=28,537, recovery cases=5,000, commission rules=155, reports/months includes 2026-06, monthly report + Excel export 200, health-score 200, morning-brief 200 with source=llm, all 8 master endpoints 200 and free of 'kazo' strings. Frontend: logged in as admin and as marketing, walked Login, Overview, Reports, Uploads, Sales Ledger, Calculations, Reconciliation, Discrepancies, Recovery, AI Insights, Masters (all 8 tabs) — every page rendered real data with ZERO console errors and ZERO occurrences of 'kazo/KAZO' in the rendered DOM. Header shows 'Latin Quarter · MARKETPLACE OS' with the 'Powered by Fundle' badge on both login and sidebar. Overview KPIs match expectation (NSV Rs 4,43,93,042.36 / 42,550 orders / 28,537 discrepancies / recoverable Rs 2,10,85,536.55). Morning Brief generated a real LLM narrative. Reconciliation 0-matched / all-variance treated as known/expected per request.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/masters/fixed-fees", "issue": "Hard-caps results with .to_list(200) while the collection holds 272 slabs — 72 fixed-fee slabs are invisible in API and in the Masters > FIXED FEE tab (UI shows 200 rows). Raise/remove the cap or paginate."},
+      {"endpoint": "GET /api/masters/gt-charges, GET /api/masters/return-fees", "issue": "Return 200 but with 0 rows (collections empty for Latin Quarter). Meanwhile loaded calculations carry non-zero gt_charge values, so the GT / Return-Fee masters are not the source of the displayed numbers."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Reports > Download Excel", "issue": "REBRAND MISS: downloaded file is named 'KAZO_Myntra_Report_2026-06.xlsx' (Reports.jsx line 40). User-visible KAZO branding.", "selector": "text=Download Excel", "priority": "HIGH"},
+      {"component": "SalesLedger / Calculations / Discrepancies / Recovery", "issue": "No pagination UI at all — each page fetches a fixed limit:500 and renders 500 rows with no Next/Load-more control, so only 500 of 42,550 sales / 42,550 calculations / 28,537 discrepancies / 5,000 recovery cases are ever reachable.", "selector": "[data-testid=\"sales-page\"], [data-testid=\"calculations-page\"]", "priority": "HIGH"},
+      {"component": "Login hero", "issue": "Hero stat chip says 'COMMISSION ENGINE 173 rules' but the loaded Latin Quarter master has 155 rules (Masters page shows '155 RULES'). Hardcoded/stale number.", "selector": "text=173 rules", "priority": "MEDIUM"},
+      {"component": "Masters > FIXED FEE tab", "issue": "Shows only 200 of 272 slabs (backend cap).", "selector": "[data-testid=\"tab-fixed\"]", "priority": "MEDIUM"},
+      {"component": "Discrepancies / Recovery tables", "issue": "SKU column renders raw Excel text-guard artifacts such as \"'132910403844774044203\" (leading apostrophe, and value looks like a settlement id, not an SKU) whereas Sales Ledger shows clean SKUs like LTQRDRSS81908972.", "selector": "table tbody tr", "priority": "MEDIUM"},
+      {"component": "Layout sidebar (viewer role)", "issue": "marketing@fundle.ai (role viewer) sees Masters/Uploads with admin-only Add Rule / Upload (replace) buttons; those calls are require_admin and will 403. Hide or disable for non-admins.", "selector": "[data-testid=\"tab-commission\"]", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Masters > GT (LOGISTICS), RETURN FEE tabs", "issues": ["Tabs render an empty table body with no empty-state message — looks like a broken page rather than 'no rules configured'"]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_latin_rebrand_smoke.py",
+    "/app/test_reports/pytest/latin_smoke.xml"
+  ],
+  "action_items": [
+    "Rename the Reports Excel download to Latin Quarter branding (Reports.jsx line 40 currently 'KAZO_Myntra_Report_...'). Also rebrand the masters export filename 'kazo-commission-masters-*.xlsx' (masters.py:468) and, optionally, the localStorage keys kazo_token / kazo_user (AuthContext.jsx, lib/api.js).",
+    "Add pagination (or infinite scroll) to Sales Ledger, Calculations, Discrepancies and Recovery — currently hard-capped at 500 rows client-side.",
+    "Remove the .to_list(200) cap on GET /api/masters/fixed-fees (272 rows exist).",
+    "Fix the hardcoded '173 rules' stat on the Login hero (actual 155).",
+    "Decide/seed the GT (Logistics) and Return Fee masters for Latin Quarter — they are empty, so 'Run Calculations' from the UI would drop the GT / return-fee components that latin_loader wrote directly.",
+    "Clean the leading-apostrophe / wrong-field SKU values surfaced on Discrepancies and Recovery."
+  ],
+  "critical_code_review_comments": [
+    "latin_loader.py writes the calculations collection directly from raw Myntra columns (commission_pct=null, fixed_fee=0.0, gt_charge taken from the file) — the 155-rule commission engine is NOT what produced the currently displayed numbers. Any admin clicking 'Run Calculations' on the Calculations page will recompute through the rule engine and, with gt_charges/return_fees empty, will replace today's KPIs with unmapped/zero components. Guard or reconcile before shipping.",
+    "Master list endpoints use fixed .to_list(N) caps (fixed-fees 200, return-fees 200, subcat-levels 500) with no total/paging — silently truncates data.",
+    "List endpoints expose limit/skip but no frontend page uses skip, so the API pagination contract is untested/unused in the product."
+  ],
+  "updated_files": ["/app/backend/tests/test_latin_rebrand_smoke.py"],
+  "success_rate": {"backend": "98% (41/42 tests)", "frontend": "90% (all 11 pages render, rebrand DOM check clean; pagination + Excel filename defects)"},
+  "seed_data_creation": "None — used pre-loaded Latin Quarter data only; no writes to app data.",
+  "should_call_test_agent_after_fix": true,
+  "should_main_agent_self_test": false,
+  "test_credentials": "admin@fundle.ai / admin123 (admin), marketing@fundle.ai / admin123 (viewer) — both verified working via API and UI",
+  "context_for_next_testing_agent": "Run `pytest /app/backend/tests/test_latin_rebrand_smoke.py -v` for the Latin Quarter smoke suite (list endpoints use limit/skip, NOT page/page_size; uploads row counts are in 'accepted_count'). Note requests.Session stores the login cookie, so use a fresh session when asserting 401 on protected routes. DOM rebrand check is currently CLEAN on all 11 pages — only the Excel download filename and localStorage keys still contain 'kazo'. Reconciliation 0-matched / health grade F is known-expected. Not retested: masters CRUD writes (Add Rule / upload-replace), reconciliation re-run, recovery case status transitions, drill-down modals from Overview KPIs.",
+  "rca_of_the_issue": "Fixed-fee truncation: masters.py list_fixed_fees uses db.fixed_fees.find({}).to_list(200) while the Latin Quarter load inserted 272 slabs. Excel filename: Reports.jsx hardcodes a.download = `KAZO_Myntra_Report_...`. Missing pagination: SalesLedger/Calculations/Discrepancies/Recovery pass a constant limit:500 and never send skip, and no page controls are rendered."
+}
