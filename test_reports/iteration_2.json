@@ -1,0 +1,34 @@
+{
+  "summary": "Focused retest of the GT (Logistics) + Return Fee masters bug fix. Backend: created /app/backend/tests/test_gt_return_masters.py (11 tests, 11 passed). GET /api/masters/gt-charges returns exactly 96 rows, every row has non-empty sub_category/level/price_range/price_lower/price_upper and charge>0, no _id leakage; GET /api/masters/return-fees returns exactly 12 unique (level,zone) rows all with fee>0. Both endpoints correctly reject unauthenticated calls (401 'Not authenticated'). Other masters regression: commission-rules=155, fixed-fees=272 (previous 200-row cap is FIXED), subcat-levels=16, tolerance/tax-rates/settlement-settings singletons all return expected keys. No 'kazo' string in any master API payload. latin_masters_seed.json on disk holds commission_rules=155, fixed_fees=272, subcat_levels=16, gt_charges=96, return_fees=12 so a fresh DB bootstraps identically. Frontend: logged in as admin@fundle.ai/admin123 -> Overview OK, /masters loads; GT (LOGISTICS) tab header reads 'GT / Logistics Charges (incl. GST) · 96 entries' with 96 rendered rows and 0 rows having empty/zero values; RETURN FEE tab reads 'Return Fee Matrix · 12 entries' with 12 rows (Level 1-4 x Local/Zonal/National, fees 125.08-390.58) all non-zero. Commission Rules 155 rows, Fixed Fee 272 rows, Sub-Cat Levels 16 rows, Tolerance/Settlement/Tax panels render. ZERO console errors; 'kazo/KAZO' absent from rendered DOM on both the Login page and the Masters page. Primary bug fix VERIFIED.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Masters > GT (LOGISTICS)", "issues": ["Derived GT charges are non-monotonic across price bands within the same sub-category/level (e.g. Blazers L3: 0-250=53.10, 450-700=53.10, but 700-1050=31.86, 1050-1800=55.46; Coats L4: 450-700=71.98 then 700-1050=18.88). Logistics charge normally rises with price band, so these medians look like sparse-sample artifacts. Data-quality note only, not a blocker.", "Return Fee matrix covers Level 1-4 only (12 rows as specified) - no Level 5 row, so any Level-5 sub-category return will fall back/unmap."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_gt_return_masters.py",
+    "/app/test_reports/pytest/gt_return.xml"
+  ],
+  "action_items": [
+    "None blocking for this fix. Optional: smooth/monotonic-check the derived GT charge bands and consider deriving a Level 5 return-fee row for completeness."
+  ],
+  "critical_code_review_comments": [
+    "seed_latin_masters() seeds per-collection only when that collection is empty - correct/idempotent, but if a partial load leaves one collection with a few rows the seed silently skips it; consider logging the skip decision per collection.",
+    "Leftover legacy seed constants in masters.py (RETURN_FEE_SEED / GT_LEVEL_SEED / SUBCAT_LEVEL_SEED with 'KAZO' docstrings) are still reachable via POST /api/masters/reset-defaults -> seed_defaults(), which would wipe the Latin Quarter masters and replace them with the old KAZO matrices. Point reset-defaults at seed_latin_masters or remove the endpoint.",
+    "Frontend still stores auth under localStorage keys kazo_token / kazo_user (lib/api.js, context/AuthContext.jsx) - not user visible, carried over from iteration_1."
+  ],
+  "updated_files": ["/app/backend/tests/test_gt_return_masters.py"],
+  "success_rate": {"backend": "100% (11/11)", "frontend": "100% (all 8 masters tabs + login/overview, 0 console errors)"},
+  "seed_data_creation": "None - read-only verification, no data written.",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "admin@fundle.ai / admin123 (admin) - verified working via API and UI",
+  "context_for_next_testing_agent": "Run `pytest /app/backend/tests/test_gt_return_masters.py -v` for the GT/Return masters regression. Masters GET endpoints require the JWT (401 without). Fixed-fees 200-row cap from iteration_1 is fixed (272 now returned). Reconciliation 0-matched / AI health grade F remains known-expected and was NOT retested. Not retested this round: masters CRUD writes (Add/Save/Delete rows, import/replace), reset-defaults (risky - would reseed legacy KAZO matrices), pagination on Sales/Calculations/Discrepancies/Recovery, Reports Excel filename.",
+  "rca_of_the_issue": "Original defect: LQ's uploaded masters workbook had no GT charge amounts or return-fee matrix, so gt_charges/return_fees stayed empty and both Masters tabs rendered an empty tbody. Fix (derive_masters.py + latin_masters_seed.json auto-loaded by seed_latin_masters on bootstrap) now populates 96 GT cells and 12 return-fee cells; confirmed present in DB, in the API responses, and in the rendered UI."
+}

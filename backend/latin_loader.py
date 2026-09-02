@@ -146,7 +146,9 @@ def _order_to_docs(row, upload_id):
     if not orl or not oli:
         return None
     return_type = _s(row.get("return_type"))
-    is_return = bool(return_type)
+    is_return = bool(return_type) and return_type.lower() not in ("null", "none", "0", "false")
+    if not is_return:
+        return_type = None
     nsv = _num(row.get("seller_product_amount"))
     nsv_val = round(abs(nsv), 2)
     sub_category = _s(row.get("article_type"))

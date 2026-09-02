@@ -346,6 +346,7 @@ async def _bootstrap():
             })
             logger.info(f"Seeded marketing user: {MARKETING_EMAIL}")
         await masters.seed_config_defaults(db)
+        await masters.seed_latin_masters(db)
         logger.info("Bootstrap complete")
     except Exception as e:
         # Never block app readiness on bootstrap errors — log and keep serving.

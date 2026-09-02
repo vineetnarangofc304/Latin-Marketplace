@@ -254,6 +254,27 @@ async def seed_config_defaults(dbh):
         })
 
 
+def _load_latin_seed():
+    path = ROOT_DIR / "latin_masters_seed.json"
+    if not path.exists():
+        return None
+    with open(path) as f:
+        return json.load(f)
+
+
+async def seed_latin_masters(dbh):
+    """Seed Latin Quarter's contract masters (commission / fixed / levels / GT / return)
+    from the bundled latin_masters_seed.json into any EMPTY master collection. Idempotent —
+    used so a fresh (production) DB comes up fully populated. Preview, already loaded, is
+    left untouched."""
+    data = _load_latin_seed()
+    if not data:
+        return
+    for coll, rows in data.items():
+        if rows and await dbh[coll].count_documents({}) == 0:
+            await dbh[coll].insert_many([dict(r) for r in rows])
+
+
 # ---------- Endpoints ----------
 def _clean(d):
     d = dict(d)
@@ -401,10 +422,10 @@ async def reset_defaults(_user=Depends(require_admin)):
     await db.gt_charges.delete_many({})
     await db.return_fees.delete_many({})
     await db.subcat_levels.delete_many({})
-    await seed_defaults(db)
+    await seed_latin_masters(db)
     from cache_utils import invalidate as _inv
     _inv()
-    return {"ok": True, "message": "Masters reseeded from default source file"}
+    return {"ok": True, "message": "Masters restored from Latin Quarter contract seed"}
 
 
 # ---------- Configuration Export / Import ----------
