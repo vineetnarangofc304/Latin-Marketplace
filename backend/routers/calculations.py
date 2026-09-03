@@ -90,8 +90,12 @@ def _match_commission_rule(rules: List[Dict], master_category: str, sub_category
     return None
 
 
-def _match_fixed_fee(slabs: List[Dict], isp: float) -> Optional[Dict]:
-    for s in slabs:
+def _match_fixed_fee(slabs: List[Dict], sub_category: str, isp: float) -> Optional[Dict]:
+    # Per-sub-category slabs: match on sub_category first, then AISP band.
+    sub = (sub_category or "").strip().lower()
+    scoped = [s for s in slabs if (s.get("sub_category") or s.get("label") or "").strip().lower() == sub] if sub else []
+    pool = scoped if scoped else [s for s in slabs if not (s.get("sub_category") or s.get("label"))]
+    for s in pool:
         if s.get("aisp_lower", 0) <= isp <= s.get("aisp_upper", 10**9):
             return s
     return None
@@ -243,7 +247,7 @@ def compute_expected(sale: Dict[str, Any], masters: Dict[str, Any]) -> Dict[str,
 
     # Match all masters up-front so the drawer can show them even for RTO / cancel.
     crule = _match_commission_rule(masters["commission_rules"], master_cat, sub_category, isp) if (master_cat and sub_category) else None
-    ff = _match_fixed_fee(masters["fixed_fees"], isp)
+    ff = _match_fixed_fee(masters["fixed_fees"], sub_category, isp)
     gt_cell = _match_gt_charge(masters["gt_charges"], sub_category, level, isp) if (sub_category and level) else None
     return_fee_cell = _match_return_fee(masters["return_fees"], level, zone) if (level and zone) else None
 

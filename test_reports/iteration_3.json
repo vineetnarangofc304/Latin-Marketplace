@@ -1,0 +1,41 @@
+{
+  "summary": "Retest of the fixed-fee-slab sub-category bug (backend + frontend). Backend: 15/15 pytest checks passed, including the reported order 100137423450 / LTQRTOPS119573072 which now matches slab label 'Tops' with fixed_fee 52.0 (was 'Dresses'). Full audit over ALL 42,550 calculations (paginated via GET /api/calculations, order_type sales=27,942 + return=14,608) found 0 cases where breakdown.fixed_fee_slab.label != breakdown.sub_category; only 2 sales rows have no slab at all (no label -> not a mismatch, part of the accepted unmapped set). Recalc smoke: POST /api/calculations/run {recalculate:true} -> 200 in 5.4s, processed=42550, total_sales=42550, unmapped_count=573, fully_mapped_count=41977 (exact expected values). Frontend: login admin@fundle.ai/admin123 OK; Calculations drawer for the reported Tops order shows 'Fixed Fee Slab: Tops -> Rs 52'; verified 12 drawers across Tops/Trousers/Blazers/Coats filters - every drawer's slab label equals the row's Sub Category. Regression in drawer OK: Commission @12.00% / 700-1050, GT (Level 1) 700-1050 x 1 -> Rs 31.86/u, Return Fee (Zone National) 'Not applied' for a sale, Total Deductions Rs 214.72 / Expected Settlement Rs 608.42 computed. Masters GT=96 rows and Return Fee=12 rows confirmed via API; no 'kazo' string in the rendered DOM on Calculations or Masters pages. One NEW minor frontend defect found: the Sub-Category exact filter suffers a stale-response race (see below).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {
+        "flow": "Calculations page -> Sub-Category (exact) filter / search interplay",
+        "issue": "No debounce or request cancellation on the sub_category filter: load() fires on every keystroke and the search field has its own 400ms debounced load(). Slower earlier responses overwrite newer ones (last-response-wins), so the grid can display rows for a different sub-category than the one shown in the filter box. Reproduced: type 'LTQR' in search, clear it, then type 'Coats' in Sub-Category -> input shows 'Coats' but all 2,543 listed rows are 'Tops'. Typing 'Tops' alone works correctly. Data correctness is unaffected (the slab invariant still holds), but the filter is misleading.",
+        "affected_selectors": ["[data-testid=\"filter-subcat\"]", "[data-testid=\"calc-search\"]"]
+      }
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_fixed_fee_subcategory.py",
+    "/app/test_reports/pytest/pytest_results_iter3.xml"
+  ],
+  "action_items": [
+    "OPTIONAL (minor): debounce the Sub-Category (exact) filter in /app/frontend/src/pages/Calculations.jsx and guard load() against stale responses (AbortController or a request sequence token) so the grid always matches the active filters.",
+    "OPTIONAL (nit): clearFilters() in Calculations.jsx rebuilds the filters object without the 'order_type' key, dropping it from state shape; include order_type: \"\" for consistency."
+  ],
+  "critical_code_review_comments": [
+    "_match_fixed_fee falls back to band-only slabs only when NO sub-category-scoped slab exists; if a sub-category has slabs but none covers the ISP the result is None (correctly flagged unmapped) rather than silently borrowing another sub-category's slab. Behaviour verified against data - good.",
+    "_match_fixed_fee keys on s['sub_category'] or s['label']; the LQ fixed-fee master (272 rows) has both fields populated and identical, so matching is unambiguous today. If a future upload sets only 'label' as a display string, matching would silently degrade - consider requiring sub_category explicitly."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_fixed_fee_subcategory.py",
+    "/app/frontend/src/pages/Calculations.jsx (added data-testids only: drawer-fixed-fee-slab-label/-fee, drawer-commission-value, drawer-gt-value, drawer-return-fee-value, drawer-source-*)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "95%"},
+  "seed_data_creation": "None. Re-ran POST /api/calculations/run {recalculate:true} on existing data (idempotent, same counts).",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "admin@fundle.ai / admin123 (from /app/memory/test_credentials.md) - login works",
+  "context_for_next_testing_agent": "Fixed-fee sub-category bug is fully verified fixed at both API and UI level; regression suite is /app/backend/tests/test_fixed_fee_subcategory.py (includes a full 42.5k-row paginated invariant audit, runs in ~10s). Drawer now has data-testids for each Matched Rules value and each Source field. Known/expected and NOT reported: 573 unmapped calculations, reconciliation 0-matched / AI health grade F. Only open item is the Sub-Category filter stale-response race on the Calculations page.",
+  "rca_of_the_issue": "Original RCA (fixed): _match_fixed_fee iterated all fixed-fee slabs and returned the first whose AISP band contained the ISP, ignoring sub_category, while LQ's fixed fees are per-sub-category (272 rows, many overlapping bands) - so a Tops order picked whichever sub-category's slab appeared first in the list (e.g. Dresses). Fix filters the slab pool by sub_category (case-insensitive) before the band check, with a fallback to global slabs that carry no sub_category. Verified across every persisted calculation: 0 mismatches."
+}

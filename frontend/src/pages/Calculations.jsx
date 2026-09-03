@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import api, { formatApiError } from "@/lib/api";
 import { fmtCurrency, fmtInt } from "@/lib/format";
@@ -26,21 +26,27 @@ export default function Calculations() {
   });
   const [sort, setSort] = useState({ by: "settlement", dir: "desc" });
   const [drawer, setDrawer] = useState(null);
+  const reqSeq = useRef(0);
+  const stateRef = useRef({});
+  stateRef.current = { period, search, filters, sort };
 
   const load = async () => {
+    const seq = ++reqSeq.current;
+    const { period: p, search: q, filters: f, sort: so } = stateRef.current;
     const params = {
-      period_type: period.period_type,
-      period_value: period.period_value || undefined,
-      search: search || undefined,
-      sub_category: filters.sub_category || undefined,
-      master_category: filters.master_category || undefined,
-      zone: filters.zone || undefined,
-      order_type: filters.order_type || undefined,
-      severity_flag: filters.severity_flag || undefined,
-      sort_by: sort.by, sort_dir: sort.dir,
+      period_type: p.period_type,
+      period_value: p.period_value || undefined,
+      search: q || undefined,
+      sub_category: f.sub_category || undefined,
+      master_category: f.master_category || undefined,
+      zone: f.zone || undefined,
+      order_type: f.order_type || undefined,
+      severity_flag: f.severity_flag || undefined,
+      sort_by: so.by, sort_dir: so.dir,
       limit: 500,
     };
     const { data } = await api.get("/calculations", { params });
+    if (seq !== reqSeq.current) return; // stale response superseded by a newer request
     setItems(data.items);
     setTotal(data.total);
   };
@@ -72,7 +78,7 @@ export default function Calculations() {
   const onSort = (key) => setSort((s) => nextDir(s.by, s.dir, key));
 
   const clearFilters = () => {
-    setFilters({ sub_category: "", master_category: "", zone: "", severity_flag: "" });
+    setFilters({ sub_category: "", master_category: "", zone: "", order_type: "", severity_flag: "" });
     setSearch("");
     setSearchParams({});
   };
@@ -227,7 +233,7 @@ function CalcDrawer({ data, onClose }) {
                   ["Qty", s?.qty], ["MRP", fmtCurrency(s?.mrp)], ["Customer Discount", fmtCurrency(s?.customer_discount)],
                   ["NSV", fmtCurrency(s?.nsv_val)]].map(([k, v]) => (
                   <div key={k} className="flex justify-between border-b border-border/50 py-1">
-                    <span className="text-slate-500">{k}</span><span>{v ?? "—"}</span>
+                    <span className="text-slate-500">{k}</span><span data-testid={`drawer-source-${String(k).toLowerCase().replace(/\s+/g, "-")}`}>{v ?? "—"}</span>
                   </div>
                 ))}
               </div>
@@ -235,10 +241,10 @@ function CalcDrawer({ data, onClose }) {
             <div>
               <div className="overline mb-2">Matched Rules</div>
               <div className="text-xs mono space-y-1 border border-border p-3 rounded-sm">
-                <div className="flex justify-between border-b border-border/50 py-1"><span className="text-slate-500">Commission {c.breakdown?.commission_rule?.commission_pct ? `@ ${(c.breakdown.commission_rule.commission_pct * 100).toFixed(2)}%` : ""}</span><span>{c.breakdown?.commission_rule?.price_range || "—"}</span></div>
-                <div className="flex justify-between border-b border-border/50 py-1"><span className="text-slate-500">Fixed Fee Slab</span><span>{c.breakdown?.fixed_fee_slab?.label || "—"} → ₹{c.breakdown?.fixed_fee_slab?.fixed_fee || 0}</span></div>
-                <div className="flex justify-between border-b border-border/50 py-1"><span className="text-slate-500">GT ({c.breakdown?.level || "—"})</span><span>{c.breakdown?.gt_charge_cell?.price_range || "—"} × {c.breakdown?.gt_charge_cell?.qty || 0} → ₹{c.breakdown?.gt_charge_cell?.unit_charge || 0}/u</span></div>
-                <div className="flex justify-between py-1"><span className="text-slate-500">Return Fee (Zone {c.breakdown?.zone || "—"})</span><span>{c.breakdown?.return_fee_cell?.applied ? `₹${c.breakdown?.return_fee_cell?.fee}` : "Not applied"}</span></div>
+                <div className="flex justify-between border-b border-border/50 py-1"><span className="text-slate-500">Commission {c.breakdown?.commission_rule?.commission_pct ? `@ ${(c.breakdown.commission_rule.commission_pct * 100).toFixed(2)}%` : ""}</span><span data-testid="drawer-commission-value">{c.breakdown?.commission_rule?.price_range || "—"}</span></div>
+                <div className="flex justify-between border-b border-border/50 py-1"><span className="text-slate-500">Fixed Fee Slab</span><span data-testid="drawer-fixed-fee-slab"><span data-testid="drawer-fixed-fee-slab-label">{c.breakdown?.fixed_fee_slab?.label || "—"}</span> → ₹<span data-testid="drawer-fixed-fee-slab-fee">{c.breakdown?.fixed_fee_slab?.fixed_fee || 0}</span></span></div>
+                <div className="flex justify-between border-b border-border/50 py-1"><span className="text-slate-500">GT ({c.breakdown?.level || "—"})</span><span data-testid="drawer-gt-value">{c.breakdown?.gt_charge_cell?.price_range || "—"} × {c.breakdown?.gt_charge_cell?.qty || 0} → ₹{c.breakdown?.gt_charge_cell?.unit_charge || 0}/u</span></div>
+                <div className="flex justify-between py-1"><span className="text-slate-500">Return Fee (Zone {c.breakdown?.zone || "—"})</span><span data-testid="drawer-return-fee-value">{c.breakdown?.return_fee_cell?.applied ? `₹${c.breakdown?.return_fee_cell?.fee}` : "Not applied"}</span></div>
               </div>
             </div>
             <div>
