@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="3" time="22.848" timestamp="2026-09-08T20:19:23.076284+00:00" hostname="agent-env-47541e07-128b-46d4-ab7d-d4551430b3cc"><testcase classname="tests.test_gt_single_deduction" name="test_recalculate_expected_counts" time="6.006" /><testcase classname="tests.test_gt_single_deduction" name="test_invariant_settlement_plus_deductions_equals_base_nsv" time="16.525" /><testcase classname="tests.test_gt_single_deduction" name="test_reproduction_return_math_via_compute_expected" time="0.237"><failure message="KeyError: 'MONGO_URL'">backend/tests/test_gt_single_deduction.py:112: in test_reproduction_return_math_via_compute_expected
+    from routers.calculations import compute_expected
+backend/routers/calculations.py:17: in &lt;module&gt;
+    from db import db
+backend/db.py:5: in &lt;module&gt;
+    _client = AsyncIOMotorClient(os.environ['MONGO_URL'])
+                                 ^^^^^^^^^^^^^^^^^^^^^^^
+&lt;frozen os&gt;:679: in __getitem__
+    ???
+E   KeyError: 'MONGO_URL'</failure></testcase></testsuite></testsuites>

@@ -1,0 +1,24 @@
+{
+  "summary": "Verified GT double-deduction bug fix. Backend: 3/3 pytest tests pass in test_gt_single_deduction.py. (1) POST /api/calculations/run {recalculate:true} -> processed=42550, fully_mapped_count=41977 (exact expected). (2) Full paginated invariant audit over ALL 41,977 mapped rows (27,942 sales + ~14k return): round(expected_settlement + total_deductions, 2) == round(base_nsv, 2) with ZERO violations. Proves GT (and every component) is deducted exactly once against raw NSV. (3) Direct compute_expected() call with client masters (NSV 348, commission 4%, fixed fee 37 + 18% GST, GT 59, return fee 106, tcs 0.5%, tds 0.1%) returns total_deductions=-12.03 and expected_settlement=-335.97, EXACTLY as required by spec (was -276.97). Frontend: login admin@fundle.ai/admin123 OK; Calculations page loads, drawer opens on row click and renders the 'Expected Charges & Deductions' list plus 'Total Deductions' and 'Expected Settlement' rows. Spot-checked drawer: order 100133986504 sale Jackets NSV 4424 -> Total Deductions 846.50, Expected Settlement 3577.50, invariant 4424 - 846.50 = 3577.50 holds. Spot-checked 3 return rows via API: all satisfy es+td == -|nsv|. No 'kazo'/'KAZO' in DOM. Regression clean.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_gt_single_deduction.py",
+    "/app/test_reports/pytest/pytest_results_iter4.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Fix in /app/backend/routers/calculations.py compute_expected is clean: 'return' branch uses expected_settlement = signed_nsv - total_deductions (line 353), 'sales' branch uses eff_nsv - total_deductions (line 375). nsv_after_gt is retained only as the commission/TCS/TDS base — correct.",
+    "The pre-existing minor Sub-Category-filter stale-response race noted in iteration_3 is unchanged (not part of this bug scope)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_gt_single_deduction.py (new regression suite)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "admin@fundle.ai / admin123 — verified working",
+  "seed_data_creation": "None. Re-ran POST /api/calculations/run {recalculate:true} on existing data.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "GT single-deduction invariant now verified via /app/backend/tests/test_gt_single_deduction.py — includes a full paginated audit of all mapped rows (runs in ~25s) and a mock-master reproduction of the -335.97 client scenario. Known/expected and NOT reported: 573 unmapped calculations, reconciliation 0-matched, AI health grade F. Only outstanding minor UI item (from iter 3) is the Sub-Category exact-filter stale response race on Calculations page.",
+  "rca_of_the_issue": "Original bug: compute_expected() for the 'return' branch summed GT into total_deductions AND used nsv_after_gt (which had already subtracted GT) as the base for expected_settlement = nsv_after_gt - total_deductions, so GT was deducted twice. Fix: switch the settlement anchor to the raw signed NSV — 'return' uses expected_settlement = signed_nsv - total_deductions, 'sales' uses eff_nsv - total_deductions. nsv_after_gt is retained only as the base for commission/TCS/TDS. Verified by asserting the identity expected_settlement + total_deductions == base_nsv across 41,977 mapped calculations (0 violations)."
+}

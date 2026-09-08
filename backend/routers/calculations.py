@@ -350,7 +350,7 @@ def compute_expected(sale: Dict[str, Any], masters: Dict[str, Any]) -> Dict[str,
         parts = [commission_incl_gst, fixed_fee_incl_gst, gt_charge_final, return_fee_final, tcs, tds]
         if all(x is not None for x in parts) and nsv_after_gt is not None:
             total_deductions = sum(parts)
-            expected_settlement = nsv_after_gt - total_deductions
+            expected_settlement = signed_nsv - total_deductions
     else:  # sales
         # Sales rows always have positive NSV. Sales+DTO / Sales+Status NF etc. go here.
         # For Sales rows we always work with absolute (positive) NSV; the Return row (if any)
@@ -372,7 +372,7 @@ def compute_expected(sale: Dict[str, Any], masters: Dict[str, Any]) -> Dict[str,
         parts = [commission_incl_gst, fixed_fee_incl_gst, gt_charge_final, tcs, tds]
         if all(x is not None for x in parts) and nsv_after_gt is not None:
             total_deductions = sum(parts) + return_fee_final
-            expected_settlement = nsv_after_gt - total_deductions
+            expected_settlement = eff_nsv - total_deductions
 
     breakdown["nsv_after_gt"] = None if nsv_after_gt is None else round(nsv_after_gt, 2)
 
