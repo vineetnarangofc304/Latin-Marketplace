@@ -14,6 +14,8 @@ import Discrepancies from "@/pages/Discrepancies";
 import Recovery from "@/pages/Recovery";
 import Insights from "@/pages/Insights";
 import Masters from "@/pages/Masters";
+import PnL from "@/pages/PnL";
+import SkuCosts from "@/pages/SkuCosts";
 import { Toaster } from "sonner";
 
 function Shell({ children }) {
@@ -41,6 +43,8 @@ function App() {
             <Route path="/recovery" element={<Shell><Recovery /></Shell>} />
             <Route path="/insights" element={<Shell><Insights /></Shell>} />
             <Route path="/masters" element={<Shell><Masters /></Shell>} />
+            <Route path="/pnl" element={<Shell><PnL /></Shell>} />
+            <Route path="/sku-costs" element={<Shell><SkuCosts /></Shell>} />
           </Routes>
         </BrowserRouter>
         <Toaster

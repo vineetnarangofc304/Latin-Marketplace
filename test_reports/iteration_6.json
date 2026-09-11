@@ -1,0 +1,28 @@
+{
+  "summary": "Verified new SKU Costs + P&L feature end-to-end. Backend: 10/10 pytest cases pass (upload csv, case-insensitive headers, missing-cost-column 400, template xlsx PK, /pnl/summary for 2026-06 margin=30.16%, /pnl/sku shape+sort+search+identity check net_pnl==settlement-product_cost & fees==commission+gt+fixed+return, /pnl/monthly has 2026-06, and sum(sku.net_pnl) ≈ summary.net_pnl within 0.1%). Frontend: login ok as admin@fundle.ai, nav-pnl & nav-sku-costs visible, no 'kazo/kaso' in DOM. SKU Costs page: template button present, csv upload via drag/click succeeded and uploaded SKU appears in list. P&L page: all 6 KPIs render (NSV ₹34.73L, Fees ₹11.14L, Taxes ₹20K, Product Cost ₹12.91L, Net P&L ₹10.47L, Margin 30.16%), Monthly tab shows 11 rows incl. 2026-06, By-SKU tab loads 1000 rows. Regression pages (Overview, Calculations, Masters) load.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Overview (and others with charts)", "issues": ["Recharts warning: 'The width(-1) and height(-1) of chart should be greater than 0' repeated in console — non-blocking but indicates a chart container without explicit dimensions."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_pnl_sku_costs.py", "/app/test_reports/pytest/pnl_results.xml"],
+  "action_items": [
+    "Optional: address Recharts width/height=-1 console warnings on Overview by setting explicit min-width/height on ResponsiveContainer.",
+    "Optional: nav-discrepancies testid not found by that exact name (Discrepancies sidebar entry exists in DOM) — verify testid naming consistency with other nav items."
+  ],
+  "critical_code_review_comments": [
+    "pnl.py _find_cols(): 'cost' substring match is greedy — a header like 'Cost Price' matches (fine) but so would 'Costing Center'. Acceptable given controlled template.",
+    "pnl.py /sku-costs/upload has no auth dependency; other write endpoints in the app typically require admin. Consider adding auth guard for consistency.",
+    "pnl.py aggregations pull to_list(20000/300000) — safe for current dataset (~5.8K SKUs) but should be paginated/streamed if data grows."
+  ],
+  "updated_files": ["/app/backend/tests/test_pnl_sku_costs.py"],
+  "success_rate": {"backend": "100% (10/10)", "frontend": "100% of tested flows"},
+  "test_credentials": "admin@fundle.ai / admin123",
+  "seed_data_creation": "Left behind TEST_PNL_SKU_A, TEST_PNL_SKU_B, TEST_PNL_SKU_C, TEST_UI_SKU_1 in sku_costs (harmless, not linked to any real order lines).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Feature is stable. Do NOT run 'Clear all' on SKU Costs — would wipe seeded costs. Test SKUs prefixed TEST_ can be safely deleted individually. Recharts -1 warnings pre-existed."
+}

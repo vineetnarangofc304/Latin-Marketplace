@@ -183,7 +183,7 @@ async def list_users(user=Depends(require_role("admin"))):
 
 
 # Include auth router now; other routers imported below
-from routers import masters, uploads_r, calculations, reconciliation, dashboards, reports, recovery, insights  # noqa: E402
+from routers import masters, uploads_r, calculations, reconciliation, dashboards, reports, recovery, insights, pnl  # noqa: E402
 
 app.include_router(api)
 app.include_router(masters.router, prefix="/api", dependencies=[Depends(current_user)])
@@ -194,6 +194,7 @@ app.include_router(dashboards.router, prefix="/api", dependencies=[Depends(curre
 app.include_router(reports.router, prefix="/api", dependencies=[Depends(current_user)])
 app.include_router(recovery.router, prefix="/api", dependencies=[Depends(current_user)])
 app.include_router(insights.router, prefix="/api", dependencies=[Depends(current_user)])
+app.include_router(pnl.router, prefix="/api", dependencies=[Depends(current_user)])
 
 # CORS — when allow_credentials=True, the spec forbids allow_origins=["*"].
 # We honour the CORS_ORIGINS env var when it's an explicit list, but if it's "*"
