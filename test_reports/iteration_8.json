@@ -1,0 +1,30 @@
+{
+  "summary": "Iteration 8: End-to-end validation of the Reconciliation basis toggle (orderfile vs contract), Methodology page, and cross-month netting fix. Backend: 8/8 pytest cases passed. Frontend: Discrepancies basis toggle works (342 settlement <-> 9,558 contract), hint text updates, drawer opens with component-level compare and Open Recovery Case button, Reconciliation page has recon-basis select AND runs table shows Basis column (Settlement/Contract), nav-methodology + /methodology page render. Final stored state left on orderfile all-months (matched=28195, variance=342, unmatched=0) as required.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Overview (Recharts)", "issues": ["Pre-existing warning 'width(-1)/height(-1) of chart should be greater than 0' - cosmetic, carried over from prior iterations."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_reconciliation_basis.py",
+    "/app/test_reports/pytest/iteration_8.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Backend correctly nets forward+reverse settlement legs via sales_by_key aggregation and sales legs are not month-filtered so per-month runs return unmatched=0 (confirmed).",
+    "Basis is stored on each run doc (verified via GET /api/reconciliation/runs and UI Basis column).",
+    "Order-file basis _expected uses myntra_actual_settlement (matches ~99.4% => 342 variance), contract basis _expected uses calc fields (produces ~9k+ variance) - both bases behave as spec.",
+    "Only one basis is stored at a time - toggling replaces prior discrepancies (verified: Discrepancies count changes from 342 to 9558 on toggle)."
+  ],
+  "updated_files": ["/app/backend/tests/test_reconciliation_basis.py (new)"],
+  "success_rate": {"backend": "100% (8/8)", "frontend": "100% (toggle, drawer, Methodology, Reconciliation Basis column all verified)"},
+  "test_credentials": "admin@fundle.ai / admin123",
+  "seed_data_creation": "None (no ingestion). Ran orderfile all-months reconciliation at end so stored discrepancies=342 (order-file basis) as required by request.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Reconciliation basis toggle feature is fully working. Backend regression suite at /app/backend/tests/test_reconciliation_basis.py covers login, dashboard/overview totals (42550 sales / 28537 settlement rows), sales ledger visibility, orderfile & contract POST /api/reconciliation/run (all-months and per-month), runs list carrying basis field, and default reset to orderfile. Do NOT re-ingest. Final state is orderfile all-months with matched=28195 variance=342 unmatched=0.",
+  "rca of the issue": "N/A - the previously-reported 'stale discrepancies / no sales data' RCA (forward+reverse legs not netted, missing TCS capture, wrong expected basis) has been fixed and validated end-to-end."
+}

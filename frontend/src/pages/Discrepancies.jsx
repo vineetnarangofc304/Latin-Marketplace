@@ -3,7 +3,7 @@ import { useSearchParams, useNavigate } from "react-router-dom";
 import api, { formatApiError } from "@/lib/api";
 import { fmtCurrency, fmtInt } from "@/lib/format";
 import { toast } from "sonner";
-import { AlertTriangle, X, Search, Filter, Wallet } from "lucide-react";
+import { AlertTriangle, X, Search, Filter, Wallet, Scale, Loader2 } from "lucide-react";
 import PeriodSelector from "@/components/PeriodSelector";
 import { SortableTh, nextDir } from "@/components/SortableTable";
 
@@ -20,7 +20,35 @@ export default function Discrepancies() {
   const [search, setSearch] = useState(searchParams.get("search") || "");
   const [sort, setSort] = useState({ by: "recoverable", dir: "desc" });
   const [drawer, setDrawer] = useState(null);
+  const [basis, setBasis] = useState("orderfile");
+  const [switching, setSwitching] = useState(false);
   const runId = searchParams.get("run") || "";
+
+  // Reflect the basis of the currently stored reconciliation run.
+  useEffect(() => {
+    api.get("/reconciliation/runs").then(({ data }) => {
+      if (data?.length && data[0].basis) setBasis(data[0].basis);
+    }).catch(() => {});
+  }, []);
+
+  const switchBasis = async (b) => {
+    if (b === basis || switching) return;
+    setSwitching(true);
+    try {
+      await api.post("/reconciliation/run", {
+        basis: b,
+        report_month: period.period_type === "month" && period.period_value ? period.period_value : undefined,
+      });
+      setBasis(b);
+      setSearchParams({});
+      await load();
+      toast.success(b === "orderfile" ? "Settlement basis (Myntra invoice vs payout)" : "Contract-audit basis (your rates vs payout)");
+    } catch (e) {
+      toast.error(formatApiError(e.response?.data?.detail));
+    } finally {
+      setSwitching(false);
+    }
+  };
 
   const load = async () => {
     const { data } = await api.get("/reconciliation/discrepancies", {
@@ -57,7 +85,35 @@ export default function Discrepancies() {
             {runId ? `Run: ${runId.slice(0, 8)}` : "All runs"} · click any row for full component compare
           </p>
         </div>
-        <PeriodSelector value={period} onChange={setPeriod} testIdPrefix="disc-period" />
+        <div className="flex flex-col items-end gap-2">
+          <div className="inline-flex items-center border border-border rounded-sm overflow-hidden bg-white" data-testid="basis-toggle">
+            <span className="px-2 text-[10px] mono uppercase tracking-wider text-slate-400 flex items-center gap-1"><Scale size={11} /> Basis</span>
+            <button
+              data-testid="basis-orderfile"
+              onClick={() => switchBasis("orderfile")}
+              disabled={switching}
+              className={`px-3 py-1.5 text-xs border-l border-border ${basis === "orderfile" ? "bg-primary text-primary-foreground font-medium" : "text-slate-600 hover:bg-slate-50"}`}
+            >
+              Settlement
+            </button>
+            <button
+              data-testid="basis-contract"
+              onClick={() => switchBasis("contract")}
+              disabled={switching}
+              className={`px-3 py-1.5 text-xs border-l border-border ${basis === "contract" ? "bg-primary text-primary-foreground font-medium" : "text-slate-600 hover:bg-slate-50"}`}
+            >
+              Contract Audit
+            </button>
+            {switching && <Loader2 size={13} className="animate-spin text-slate-400 mx-2" />}
+          </div>
+          <PeriodSelector value={period} onChange={setPeriod} testIdPrefix="disc-period" />
+        </div>
+      </div>
+
+      <div className="text-xs text-slate-500 -mt-1" data-testid="basis-hint">
+        {basis === "orderfile"
+          ? "Settlement basis — compares Myntra's own invoiced charges against what it actually paid out (catches payout errors)."
+          : "Contract-audit basis — compares your negotiated contract rates against Myntra's actual charges (catches contract overcharges)."}
       </div>
 
       <div className="border border-border bg-white p-3 rounded-sm flex items-center gap-2 flex-wrap">

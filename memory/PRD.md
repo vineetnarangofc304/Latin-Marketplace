@@ -56,6 +56,32 @@ User: "Make it production ready...no hard code no fallback. Make it ready for mo
 - Frontend: All new data-testids present and functional
 - Security: auth guard + admin-only enforcement verified end-to-end
 
+## Iteration 8 — Discrepancy report accuracy + dual-basis reconciliation (2026-06, Latin Quarter fork)
+User: "the discrepancy report is not updated ... can't see any sales data ... publish all formulas."
+
+### Root causes found & fixed
+1. **Forward/Reverse legs not netted** — a returned item has a Forward (sale) leg + Reverse (return) leg; the Myntra settlement row is the NET of both, but reconciliation compared the netted actual against only ONE leg's expected. Now expected is netted across all legs of an order line (`sales_by_key` grouping in `routers/reconciliation.py`).
+2. **TCS never captured** from payouts — `load_payouts` now sums `IGST_TCS+CGST_TCS+SGST_TCS` into `settled_tcs`.
+3. **Wrong comparison basis** — the report reconciled against *contract* rates (~5%) vs Myntra actuals (~23%), producing ~100% noise (₹12M "recoverable"). 
+4. **Cross-month legs** — sales legs are no longer month-filtered in reconciliation (a settlement paid in month X can have its sale row dated in another month), eliminating false `unmatched`.
+
+### Delivered
+- **Dual-basis reconciliation toggle** (`RunReconIn.basis`): 
+  - **Settlement (order-file, default)** — expected = Myntra's own invoiced charges (order-file `actual_*` fields, netted) + `myntra_actual_settlement` (matches payout ~99.4%). Result: **28,195 matched / 342 variance / 0 unmatched, ₹32,644 recoverable**.
+  - **Contract audit** — expected = contract engine (`compute_expected`) values, netted. Surfaces contract overcharges.
+  - Only one basis stored at a time; toggling re-runs reconciliation for the current scope. `basis` stored on each `recon_run` + discrepancy.
+- **Discrepancies page** — segmented basis toggle (`basis-orderfile` / `basis-contract`) with hint text + spinner.
+- **Reconciliation page** — basis `<select>` + Basis column in runs table.
+- **Methodology page** (`/methodology`, nav `Methodology`) — publishes every formula in-app; also `/app/FORMULAS.md`.
+- **Full re-ingest orchestrator** `/app/backend/reingest_all.py` (masters → orders → derive → contract calc → payouts → reconciliation). Sales docs now also store `actual_tcs`, `actual_tds`, `myntra_actual_settlement`.
+
+### Verified — iteration 8 test report `/app/test_reports/iteration_8.json`
+- Backend 8/8 pytest, Frontend 100% (toggle, drawer, Methodology, Basis column). No open issues.
+
+### NOTE for prod (fundlezone.com) — NOT yet deployed (user chose preview-only)
+- Production startup (`server.py`) seeds only masters/config/admin, **NOT** transaction data (sales/settlement/calculations/discrepancies) — which is why the deployed site shows no sales. A one-time self-seed on first boot (ingest bundled `lq_data` CSVs when `sales` is empty) + redeploy is still pending user go-ahead.
+
+
 ## Iteration 9 — Production login "long wait then fails" (2026-07-21)
 User: login on production https://kazob2b.fundlezone.com hangs then errors with "Something went wrong. Please try again."
 

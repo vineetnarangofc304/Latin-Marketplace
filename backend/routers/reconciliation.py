@@ -50,16 +50,52 @@ def _severity(recoverable: float, tol: Dict[str, float]) -> str:
     return "low"
 
 
+def _net_field(items: List[Dict], field: str) -> float:
+    return sum(float(x.get(field) or 0) for x in items)
+
+
+def _abs_sum(items: List[Dict], field: str) -> float:
+    return sum(abs(float(x.get(field) or 0)) for x in items)
+
+
+def _expected_orderfile(legs: List[Dict]) -> Dict[str, float]:
+    """Expected = Myntra's OWN order-file reported charges, summed across legs."""
+    return {
+        "commission": _abs_sum(legs, "actual_commission_value"),
+        "fixed_fee": _abs_sum(legs, "actual_fixed_fee"),
+        "gt_charge": _abs_sum(legs, "actual_gt_amount"),
+        "return_fee": _abs_sum(legs, "actual_return_fee"),
+        "tcs": _abs_sum(legs, "actual_tcs"),
+        "tds": _abs_sum(legs, "actual_tds"),
+        "settlement": _net_field(legs, "myntra_actual_settlement"),
+    }
+
+
+def _expected_contract(calcs: List[Dict]) -> Dict[str, float]:
+    """Expected = contract engine (compute_expected), netted across legs."""
+    return {
+        "commission": _net_field(calcs, "commission_incl_gst"),
+        "fixed_fee": _net_field(calcs, "fixed_fee_incl_gst"),
+        "gt_charge": _net_field(calcs, "gt_charge"),
+        "return_fee": _net_field(calcs, "return_fee"),
+        "tcs": _net_field(calcs, "tcs"),
+        "tds": _net_field(calcs, "tds"),
+        "settlement": _net_field(calcs, "expected_settlement"),
+    }
+
+
 class RunReconIn(BaseModel):
     settlement_upload_id: Optional[str] = None
     sales_upload_id: Optional[str] = None
     report_month: Optional[str] = None
+    basis: Optional[str] = "orderfile"   # "orderfile" (Myntra invoice) | "contract"
 
 
 @router.post("/reconciliation/run")
 async def run_reconciliation(payload: RunReconIn):
     tol = await _tolerance()
     run_id = _uid()
+    basis = payload.basis if payload.basis in ("orderfile", "contract") else "orderfile"
 
     settle_q: Dict[str, Any] = {}
     if payload.settlement_upload_id:
@@ -78,13 +114,20 @@ async def run_reconciliation(payload: RunReconIn):
         disc_del_q["report_month"] = payload.report_month
     await db.discrepancies.delete_many(disc_del_q)
 
+    # NOTE: never month-filter the sales legs. A settlement paid in month X often
+    # has its sale/return row dated in a different month, so scoping sales by
+    # report_month would orphan those legs and mis-report them as "unmatched".
     sales_q: Dict[str, Any] = {}
     if payload.sales_upload_id:
         sales_q["upload_id"] = payload.sales_upload_id
-    if payload.report_month:
-        sales_q["report_month"] = payload.report_month
     sales_docs = await db.sales.find(sales_q, {"_id": 0}).to_list(500000)
-    sales_map = {(s["online_order_id"], s.get("order_line_id") or s["sku"]): s for s in sales_docs}
+    # Group sales legs by order line. A returned item appears as TWO rows
+    # (Forward sale + Reverse return); the settlement row for that line is the
+    # NET of both payouts, so the expected side must be netted the same way.
+    sales_by_key: Dict[Any, List[Dict[str, Any]]] = {}
+    for s in sales_docs:
+        k = (s["online_order_id"], s.get("order_line_id") or s["sku"])
+        sales_by_key.setdefault(k, []).append(s)
 
     sales_ids = [s["id"] for s in sales_docs]
     calc_docs = await db.calculations.find({"sales_id": {"$in": sales_ids}}, {"_id": 0}).to_list(200000)
@@ -98,9 +141,9 @@ async def run_reconciliation(payload: RunReconIn):
 
     for settle in settlements:
         key = (settle["online_order_id"], settle.get("order_line_id") or settle["sku"])
-        sale = sales_map.get(key)
-        report_month = settle.get("report_month") or (sale.get("report_month") if sale else None)
-        if not sale:
+        legs = sales_by_key.get(key)
+        report_month = settle.get("report_month") or (legs[0].get("report_month") if legs else None)
+        if not legs:
             unmatched_count += 1
             discrepancies.append({
                 "id": _uid(), "recon_run_id": run_id,
@@ -117,54 +160,62 @@ async def run_reconciliation(payload: RunReconIn):
             })
             continue
 
-        calc = calc_map.get(sale["id"])
-        if not calc:
-            unmatched_count += 1
-            discrepancies.append({
-                "id": _uid(), "recon_run_id": run_id,
-                "report_month": report_month,
-                "online_order_id": settle["online_order_id"], "sku": settle["sku"],
-                "sales_id": sale["id"],
-                "match_status": "unmatched",
-                "severity": "medium",
-                "reason": "Sale found but calculation missing — run calculations first",
-                "recoverable": 0,
-                "components": [],
-                "settled": settle,
-                "expected": None,
-                "created_at": _iso(),
-            })
-            continue
+        calcs = [calc_map.get(s["id"]) for s in legs]
 
-        if calc.get("unmapped"):
-            unmatched_count += 1
-            discrepancies.append({
-                "id": _uid(), "recon_run_id": run_id,
-                "report_month": report_month,
-                "online_order_id": settle["online_order_id"], "sku": settle["sku"],
-                "sales_id": sale["id"], "calc_id": calc["id"],
-                "match_status": "unmatched",
-                "severity": "medium",
-                "reason": "Expected calc has unmapped components: " + "; ".join(calc.get("unmapped_reasons", []))[:200],
-                "recoverable": 0,
-                "components": [],
-                "settled": settle,
-                "expected": None,
-                "created_at": _iso(),
-            })
-            continue
+        if basis == "contract":
+            if any(c is None for c in calcs):
+                unmatched_count += 1
+                discrepancies.append({
+                    "id": _uid(), "recon_run_id": run_id,
+                    "report_month": report_month,
+                    "online_order_id": settle["online_order_id"], "sku": settle["sku"],
+                    "sales_id": legs[0]["id"],
+                    "match_status": "unmatched",
+                    "severity": "medium",
+                    "reason": "Sale found but calculation missing — run calculations first",
+                    "recoverable": 0, "components": [], "settled": settle,
+                    "expected": None, "created_at": _iso(),
+                })
+                continue
+            if any(c.get("unmapped") for c in calcs):
+                reasons_all: List[str] = []
+                for c in calcs:
+                    reasons_all.extend(c.get("unmapped_reasons", []))
+                unmatched_count += 1
+                discrepancies.append({
+                    "id": _uid(), "recon_run_id": run_id,
+                    "report_month": report_month,
+                    "online_order_id": settle["online_order_id"], "sku": settle["sku"],
+                    "sales_id": legs[0]["id"],
+                    "match_status": "unmatched",
+                    "severity": "medium",
+                    "reason": "Expected calc has unmapped components: " + "; ".join(reasons_all)[:200],
+                    "recoverable": 0, "components": [], "settled": settle,
+                    "expected": None, "created_at": _iso(),
+                })
+                continue
+            exp = _expected_contract(calcs)
+        else:  # orderfile — Myntra's own invoiced charges (netted across legs)
+            exp = _expected_orderfile(legs)
 
-        # Compare component-by-component
+        exp_commission = exp["commission"]
+        exp_fixed = exp["fixed_fee"]
+        exp_gt = exp["gt_charge"]
+        exp_return = exp["return_fee"]
+        exp_tcs = exp["tcs"]
+        exp_tds = exp["tds"]
+        exp_settlement = exp["settlement"]
+
         components = []
         recoverable = 0.0
         any_variance = False
         checks = [
-            ("commission", calc["commission_incl_gst"], settle.get("settled_commission", 0)),
-            ("fixed_fee", calc["fixed_fee_incl_gst"], settle.get("settled_fixed_fee", 0)),
-            ("gt_charge", calc["gt_charge"], settle.get("settled_gt_charge", 0)),
-            ("return_fee", calc["return_fee"], settle.get("settled_return_fee", 0)),
-            ("tcs", calc["tcs"], settle.get("settled_tcs", 0)),
-            ("tds", calc["tds"], settle.get("settled_tds", 0)),
+            ("commission", exp_commission, settle.get("settled_commission", 0)),
+            ("fixed_fee", exp_fixed, settle.get("settled_fixed_fee", 0)),
+            ("gt_charge", exp_gt, settle.get("settled_gt_charge", 0)),
+            ("return_fee", exp_return, settle.get("settled_return_fee", 0)),
+            ("tcs", exp_tcs, settle.get("settled_tcs", 0)),
+            ("tds", exp_tds, settle.get("settled_tds", 0)),
         ]
         for name, exp, act in checks:
             exp_f = float(exp or 0)
@@ -184,7 +235,6 @@ async def run_reconciliation(payload: RunReconIn):
             })
 
         # Settlement amount
-        exp_settlement = float(calc["expected_settlement"])
         act_settlement = float(settle.get("settled_amount", 0))
         settle_variance = act_settlement - exp_settlement
         settle_status = _classify(act_settlement, exp_settlement, tol)
@@ -204,17 +254,16 @@ async def run_reconciliation(payload: RunReconIn):
         severity = _severity(recoverable if recoverable else abs(settle_variance), tol)
         reason_parts = []
         for c in components:
-            if c["status"] not in ("matched", "net_settlement") or (c["component"] == "net_settlement" and c["status"] != "matched"):
-                if c["status"] != "matched":
-                    reason_parts.append(f"{c['component']}: {c['status']} by ₹{abs(c['variance']):.2f}")
+            if c["status"] != "matched":
+                reason_parts.append(f"{c['component']}: {c['status']} by ₹{abs(c['variance']):.2f}")
         reason = "; ".join(reason_parts) or "Variance detected"
         total_recoverable += max(recoverable, 0)
 
         discrepancies.append({
             "id": _uid(), "recon_run_id": run_id,
             "report_month": report_month,
-            "online_order_id": settle["online_order_id"], "sku": sale.get("sku") or settle.get("sku"),
-            "sales_id": sale["id"], "calc_id": calc["id"],
+            "online_order_id": settle["online_order_id"], "sku": legs[0].get("sku") or settle.get("sku"),
+            "sales_id": legs[0]["id"], "legs": len(legs),
             "match_status": "variance",
             "severity": severity,
             "reason": reason,
@@ -223,17 +272,19 @@ async def run_reconciliation(payload: RunReconIn):
             "components": components,
             "settled": settle,
             "expected": {
-                "commission_incl_gst": calc["commission_incl_gst"],
-                "fixed_fee_incl_gst": calc["fixed_fee_incl_gst"],
-                "gt_charge": calc["gt_charge"],
-                "return_fee": calc["return_fee"],
-                "tcs": calc["tcs"],
-                "tds": calc["tds"],
-                "expected_settlement": calc["expected_settlement"],
+                "commission_incl_gst": round(exp_commission, 2),
+                "fixed_fee_incl_gst": round(exp_fixed, 2),
+                "gt_charge": round(exp_gt, 2),
+                "return_fee": round(exp_return, 2),
+                "tcs": round(exp_tcs, 2),
+                "tds": round(exp_tds, 2),
+                "expected_settlement": round(exp_settlement, 2),
             },
             "created_at": _iso(),
         })
 
+    for d in discrepancies:
+        d["basis"] = basis
     # Persist run + discrepancies (insert_many mutates docs by adding _id)
     sample = [dict(d) for d in discrepancies[:20]]  # snapshot before mutation
     if discrepancies:
@@ -242,6 +293,7 @@ async def run_reconciliation(payload: RunReconIn):
 
     run_doc = {
         "id": run_id,
+        "basis": basis,
         "created_at": _iso(),
         "settlement_upload_id": payload.settlement_upload_id,
         "sales_upload_id": payload.sales_upload_id,

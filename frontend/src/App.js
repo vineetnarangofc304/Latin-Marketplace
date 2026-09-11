@@ -8,6 +8,7 @@ import Overview from "@/pages/Overview";
 import Reports from "@/pages/Reports";
 import Uploads from "@/pages/Uploads";
 import SalesLedger from "@/pages/SalesLedger";
+import Methodology from "@/pages/Methodology";
 import Calculations from "@/pages/Calculations";
 import Reconciliation from "@/pages/Reconciliation";
 import Discrepancies from "@/pages/Discrepancies";
@@ -47,6 +48,7 @@ function App() {
             <Route path="/pnl" element={<Shell><PnL /></Shell>} />
             <Route path="/sku-costs" element={<Shell><SkuCosts /></Shell>} />
             <Route path="/claims" element={<Shell><Claims /></Shell>} />
+            <Route path="/methodology" element={<Shell><Methodology /></Shell>} />
           </Routes>
         </BrowserRouter>
         <Toaster

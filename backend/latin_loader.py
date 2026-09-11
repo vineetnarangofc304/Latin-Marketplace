@@ -185,6 +185,7 @@ def _order_to_docs(row, upload_id):
         "month": rm,
         "actual_commission_value": commission, "actual_fixed_fee": fixed_fee,
         "actual_gt_amount": gt, "actual_return_fee": 0.0,
+        "actual_tcs": tcs, "actual_tds": tds,
         "myntra_total_settlement": settlement,
         "myntra_actual_settlement": round(_num(row.get("total_actual_settlement")), 2),
         "amount_pending_settlement": round(_num(row.get("amount_pending_settlement")), 2),
@@ -283,6 +284,7 @@ async def load_payouts():
                 a["settled_commission"] += _num(row.get("Commission"))
                 a["settled_fixed_fee"] += _num(row.get("fixed_fee"))
                 a["settled_gt_charge"] += _num(row.get("Logistics_Commission"))
+                a["settled_tcs"] += (_num(row.get("IGST_TCS")) + _num(row.get("CGST_TCS")) + _num(row.get("SGST_TCS")))
                 a["settled_tds"] += _num(row.get("TDS"))
                 a["settled_amount"] += _num(row.get("Settled_Amount"))
                 pd = _s(row.get("Payment_Date"))

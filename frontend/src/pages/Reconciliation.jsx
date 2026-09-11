@@ -12,6 +12,7 @@ export default function Reconciliation() {
   const [running, setRunning] = useState(false);
   const [period, setPeriod] = useState({ period_type: "month", period_value: "" });
   const [settlementCount, setSettlementCount] = useState(null);
+  const [basis, setBasis] = useState("orderfile");
 
   const load = async () => {
     const { data } = await api.get("/reconciliation/runs");
@@ -33,7 +34,7 @@ export default function Reconciliation() {
     }
     setRunning(true);
     try {
-      const { data } = await api.post("/reconciliation/run", { report_month: period.period_value });
+      const { data } = await api.post("/reconciliation/run", { report_month: period.period_value, basis });
       toast.success(`${data.matched} matched · ${data.variance} variance · ${data.unmatched} unmatched · ₹${data.total_recoverable} recoverable`);
       await load();
     } catch (e) {
@@ -54,6 +55,10 @@ export default function Reconciliation() {
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          <select data-testid="recon-basis" value={basis} onChange={(e) => setBasis(e.target.value)} className="input" title="Reconciliation basis">
+            <option value="orderfile">Settlement (Myntra invoice vs payout)</option>
+            <option value="contract">Contract audit (your rates vs payout)</option>
+          </select>
           <PeriodSelector value={period} onChange={setPeriod} testIdPrefix="recon-period" />
           <button data-testid="btn-run-recon" onClick={runNow} disabled={running || period.period_type !== "month" || !period.period_value} className="btn btn-primary">
             <Play size={12} /> {running ? "Reconciling…" : "Run Reconciliation"}
@@ -85,6 +90,7 @@ export default function Reconciliation() {
               <tr>
                 <th className="grid-cell text-left">Run</th>
                 <th className="grid-cell text-left">Month</th>
+                <th className="grid-cell text-left">Basis</th>
                 <th className="grid-cell text-left">Created</th>
                 <th className="grid-cell text-right">Settled</th>
                 <th className="grid-cell text-right">Matched</th>
@@ -96,7 +102,7 @@ export default function Reconciliation() {
             </thead>
             <tbody>
               {runs.length === 0 ? (
-                <tr><td colSpan={9} className="grid-cell text-center text-slate-400 py-10">
+                <tr><td colSpan={10} className="grid-cell text-center text-slate-400 py-10">
                   No reconciliation runs. Upload a settlement file, pick the month, then click "Run Reconciliation".
                 </td></tr>
               ) : runs.map((r) => (
@@ -104,6 +110,7 @@ export default function Reconciliation() {
                     onClick={() => nav(`/discrepancies?run=${r.id}${r.report_month ? `&period_type=month&period_value=${r.report_month}` : ""}`)}>
                   <td className="grid-cell text-xs drill-link">{r.id.slice(0, 8)}</td>
                   <td className="grid-cell text-xs mono">{r.report_month || "—"}</td>
+                  <td className="grid-cell text-xs">{r.basis === "contract" ? "Contract" : "Settlement"}</td>
                   <td className="grid-cell text-xs text-slate-500">{new Date(r.created_at).toLocaleString()}</td>
                   <td className="grid-cell text-right">{fmtInt(r.total_settled_rows)}</td>
                   <td className="grid-cell text-right fin-pos">{fmtInt(r.matched)}</td>
