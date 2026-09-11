@@ -16,6 +16,7 @@ import Insights from "@/pages/Insights";
 import Masters from "@/pages/Masters";
 import PnL from "@/pages/PnL";
 import SkuCosts from "@/pages/SkuCosts";
+import Claims from "@/pages/Claims";
 import { Toaster } from "sonner";
 
 function Shell({ children }) {
@@ -45,6 +46,7 @@ function App() {
             <Route path="/masters" element={<Shell><Masters /></Shell>} />
             <Route path="/pnl" element={<Shell><PnL /></Shell>} />
             <Route path="/sku-costs" element={<Shell><SkuCosts /></Shell>} />
+            <Route path="/claims" element={<Shell><Claims /></Shell>} />
           </Routes>
         </BrowserRouter>
         <Toaster

@@ -3,7 +3,7 @@ import { useAuth } from "@/context/AuthContext";
 import {
   LayoutDashboard, Upload, Table2, Calculator, GitCompareArrows,
   AlertTriangle, Settings2, LogOut, FileText, Wallet, Sparkles,
-  TrendingUp, Coins,
+  TrendingUp, Coins, FileWarning,
 } from "lucide-react";
 
 const nav = [
@@ -13,6 +13,7 @@ const nav = [
   { to: "/pnl", label: "P&L", icon: TrendingUp, testId: "nav-pnl" },
   { to: "/uploads", label: "Uploads", icon: Upload, testId: "nav-uploads" },
   { to: "/sku-costs", label: "SKU Costs", icon: Coins, testId: "nav-sku-costs" },
+  { to: "/claims", label: "Claims", icon: FileWarning, testId: "nav-claims" },
   { to: "/sales", label: "Sales Ledger", icon: Table2, testId: "nav-sales" },
   { to: "/calculations", label: "Calculations", icon: Calculator, testId: "nav-calculations" },
   { to: "/reconciliation", label: "Reconciliation", icon: GitCompareArrows, testId: "nav-recon" },

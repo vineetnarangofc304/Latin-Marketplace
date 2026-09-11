@@ -1,0 +1,34 @@
+{
+  "summary": "Iteration 7: Full backend + frontend testing of Ad Spend upload, P&L integration (ad_spend/net_contribution/contribution_margin_pct), and Breakage/Lost-in-Return Claims features. All 14 pytest cases passed; frontend flows verified end-to-end via Playwright (login -> P&L KPIs -> SKU Costs ad-spend upload testid -> Claims page: scan, KPIs, table, drawer email body/mailto/copy, mark emailed status transition).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Overview (Recharts)", "issues": ["Recurring console warnings: 'The width(-1) and height(-1) of chart should be greater than 0'. Container has no minWidth/minHeight set for ResponsiveContainer. Cosmetic, not blocking."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_ad_spend_claims.py",
+    "/app/test_reports/pytest/iteration_7.xml"
+  ],
+  "action_items": [
+    "(Optional) Fix Recharts ResponsiveContainer warnings by ensuring parent has explicit dimensions or aspect ratio (cosmetic)."
+  ],
+  "critical_code_review_comments": [
+    "claims.py scan builds oli_map by iterating full sales collection - fine for current size but could be scoped to matched sales_ids for efficiency at scale.",
+    "pnl.py _row: ad_spend field is set 0 in _row but overwritten later in pnl_by_sku via pro-rata net_nsv share; net_pnl at SKU level (settlement - product_cost) intentionally does NOT include ad_spend, while summary net_contribution = net_pnl - ad_spend. Documented via test identity - working as designed.",
+    "Claims list default limit 500 but frontend requests 1000; endpoint caps at 10000 via Query - OK.",
+    "No pagination controls in Claims UI for 14,442 rows; only 1000 rendered. Consider server-side pagination UI or virtualization for perf."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_ad_spend_claims.py (new)"
+  ],
+  "success_rate": {"backend": "100% (14/14)", "frontend": "100% (all testids present, drawer + status transitions verified)"},
+  "test_credentials": "admin@fundle.ai/admin123 (admin), marketing@fundle.ai/admin123 (viewer for 403 checks)",
+  "seed_data_creation": "Re-uploaded ad-spend 2026-05=42000, 2026-06=50000 (idempotent upsert). Flipped 1 claim to 'emailed' during UI test and restored to 'open'.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "New features (ad spend + claims) fully working. Backend regression tests in /app/backend/tests/test_ad_spend_claims.py. Expected data: 14,442 open claims at materiality 200, total ~Rs 1.44Cr. P&L 2026-06 ad_spend=50000 confirmed in monthly and summary. mailto/copy/mark-emailed/mark-resolved drawer buttons all wired to PATCH /api/claims/breakage/{id}. No 'kazo' string in rendered DOM.",
+  "rca of the issue": "N/A - no defects found."
+}

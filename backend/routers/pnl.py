@@ -136,6 +136,98 @@ async def sku_cost_template():
     )
 
 
+# ---------------- Ad / marketing spend ----------------
+def _find_ad_cols(header):
+    month_i = amt_i = None
+    for i, h in enumerate(header):
+        hn = str(h or "").strip().lower()
+        if month_i is None and hn in ("month", "period", "report month", "month (yyyy-mm)", "yyyy-mm"):
+            month_i = i
+        if amt_i is None and ("spend" in hn or "amount" in hn or hn in ("ad", "ads", "marketing", "adspend")):
+            amt_i = i
+    return month_i, amt_i
+
+
+def _month_norm(v):
+    s = _s(v)
+    if not s:
+        return None
+    if len(s) >= 7 and s[4] == "-":
+        return s[:7]
+    return s
+
+
+@router.post("/ad-spend/upload")
+async def upload_ad_spend(file: UploadFile = File(...), _admin=Depends(require_admin)):
+    content = await file.read()
+    name = (file.filename or "").lower()
+    if name.endswith(".csv"):
+        rows = list(csv.reader(content.decode("utf-8", errors="replace").splitlines()))
+    else:
+        wb = openpyxl.load_workbook(io.BytesIO(content), read_only=True, data_only=True)
+        ws = wb[wb.sheetnames[0]]
+        rows = [list(r) for r in ws.iter_rows(values_only=True)]
+    if not rows:
+        raise HTTPException(400, "Empty file")
+    month_i, amt_i = _find_ad_cols(rows[0])
+    if month_i is None or amt_i is None:
+        raise HTTPException(400, "Could not find 'Month' and 'Amount'/'Spend' columns.")
+    accepted = 0
+    now = _iso()
+    for r in rows[1:]:
+        if r is None or len(r) <= max(month_i, amt_i):
+            continue
+        m = _month_norm(r[month_i])
+        if not m:
+            continue
+        await db.ad_spend.update_one(
+            {"report_month": m},
+            {"$set": {"report_month": m, "amount": round(_num(r[amt_i]), 2), "updated_at": now},
+             "$setOnInsert": {"id": _uid()}},
+            upsert=True,
+        )
+        accepted += 1
+    total = await db.ad_spend.count_documents({})
+    return {"filename": file.filename, "accepted_count": accepted, "total_months": total}
+
+
+@router.get("/ad-spend")
+async def list_ad_spend():
+    items = await db.ad_spend.find({}, {"_id": 0}).sort("report_month", 1).to_list(1000)
+    return {"total": len(items), "items": items, "total_spend": round(sum(a.get("amount", 0) for a in items), 2)}
+
+
+@router.delete("/ad-spend")
+async def clear_ad_spend(_admin=Depends(require_admin)):
+    r = await db.ad_spend.delete_many({})
+    return {"deleted": r.deleted_count}
+
+
+@router.get("/ad-spend/template")
+async def ad_spend_template():
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Ad Spend"
+    ws.append(["Month", "Amount"])
+    ws.append(["2026-06", 50000])
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return StreamingResponse(
+        buf, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="ad-spend-template.xlsx"'})
+
+
+async def _ad_spend_map(period_type, period_value):
+    q = {}
+    if period_type:
+        q = month_query(period_type, period_value)
+    m = {}
+    async for a in db.ad_spend.find(q, {"_id": 0}):
+        m[a["report_month"]] = m.get(a["report_month"], 0) + (a.get("amount") or 0)
+    return m
+
+
 # ---------------- P&L ----------------
 _GROUP = {
     "sales_units": {"$sum": {"$cond": [{"$eq": ["$order_type", "sales"]}, 1, 0]}},
@@ -212,6 +304,10 @@ async def pnl_summary(period_type: Optional[str] = None, period_value: Optional[
     agg["margin_pct"] = round(agg["net_pnl"] / agg["net_nsv"] * 100, 2) if agg["net_nsv"] else 0.0
     agg["skus"] = skus
     agg["skus_missing_cost"] = missing
+    total_ad = round(sum((await _ad_spend_map(period_type, period_value)).values()), 2)
+    agg["ad_spend"] = total_ad
+    agg["net_contribution"] = round(agg["net_pnl"] - total_ad, 2)
+    agg["contribution_margin_pct"] = round(agg["net_contribution"] / agg["net_nsv"] * 100, 2) if agg["net_nsv"] else 0.0
     return agg
 
 
@@ -239,6 +335,12 @@ async def pnl_by_sku(period_type: Optional[str] = None, period_value: Optional[s
         r["cost"] = cost
         r["cost_missing"] = cost is None
         rows.append(r)
+    total_ad = round(sum((await _ad_spend_map(period_type, period_value)).values()), 2)
+    pos = sum(r["net_nsv"] for r in rows if r["net_nsv"] > 0) or 1.0
+    for r in rows:
+        share = (r["net_nsv"] / pos) if r["net_nsv"] > 0 else 0.0
+        r["ad_spend"] = round(total_ad * share, 2)
+        r["net_contribution"] = round(r["net_pnl"] - r["ad_spend"], 2)
     rows.sort(key=lambda x: (x.get(sort_by) if isinstance(x.get(sort_by), (int, float)) else 0),
               reverse=(sort_dir == "desc"))
     total = len(rows)
@@ -271,4 +373,8 @@ async def pnl_monthly():
         mm["month"] = m
         mm["margin_pct"] = round(mm["net_pnl"] / mm["net_nsv"] * 100, 2) if mm["net_nsv"] else 0.0
         out.append(mm)
+    adm = await _ad_spend_map(None, None)
+    for mm in out:
+        mm["ad_spend"] = round(adm.get(mm["month"], 0), 2)
+        mm["net_contribution"] = round(mm["net_pnl"] - mm["ad_spend"], 2)
     return out
