@@ -71,6 +71,13 @@ async def run_reconciliation(payload: RunReconIn):
     if not settlements:
         raise HTTPException(400, "No settlement rows to reconcile. Please upload a settlement file for this month.")
 
+    # Clear prior discrepancies for the same scope so the panel reflects ONLY the latest run
+    # (otherwise stale rows from earlier runs linger and mismatch the calculation panel).
+    disc_del_q: Dict[str, Any] = {}
+    if payload.report_month:
+        disc_del_q["report_month"] = payload.report_month
+    await db.discrepancies.delete_many(disc_del_q)
+
     sales_q: Dict[str, Any] = {}
     if payload.sales_upload_id:
         sales_q["upload_id"] = payload.sales_upload_id
@@ -206,7 +213,7 @@ async def run_reconciliation(payload: RunReconIn):
         discrepancies.append({
             "id": _uid(), "recon_run_id": run_id,
             "report_month": report_month,
-            "online_order_id": settle["online_order_id"], "sku": settle["sku"],
+            "online_order_id": settle["online_order_id"], "sku": sale.get("sku") or settle.get("sku"),
             "sales_id": sale["id"], "calc_id": calc["id"],
             "match_status": "variance",
             "severity": severity,

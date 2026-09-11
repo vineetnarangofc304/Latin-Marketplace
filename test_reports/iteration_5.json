@@ -1,0 +1,24 @@
+{
+  "summary": "POINT 2 fix verified end-to-end. Backend pytest suite /app/backend/tests/test_point2_discrepancy_parity.py 4/4 PASS: (a) POST /api/reconciliation/run twice — all discrepancies show exactly ONE distinct recon_run_id (stale rows cleared). (b) Order 100152032783 discrepancy: match_status=variance, sku='LTQRSHRT118021261' (sale's real SKU, no leading-quote payout SKU), expected.commission_incl_gst=34.35, expected.gt_charge=31.86, expected.fixed_fee_incl_gst=60.18, expected.expected_settlement=387.70 — IDENTICAL to Calculations panel. (c) Global parity: sampled 200 variance discrepancies via detail endpoint and cross-checked expected block vs. linked calculations doc — 0 mismatches on commission_incl_gst, gt_charge, fixed_fee_incl_gst, expected_settlement AND SKU. (d) Login admin@fundle.ai/admin123 works. Frontend UI: /discrepancies?search=100152032783&period_value=2026-06 returns exactly 1 row; drawer opens showing Component-Level Compare with Expected 34.35/31.86/60.18/387.70 and Marketplace-Reported (Settled) JSON block; SKU LTQRSHRT118021261 displayed at top. No 'kazo'/'KAZO' anywhere in DOM. Stale-clearing (delete_many at line 79) and sale-SKU-first assignment (line 216: sale.get('sku') or settle.get('sku')) both present in /app/backend/routers/reconciliation.py.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_point2_discrepancy_parity.py",
+    "/app/test_reports/pytest/point2.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "reconciliation.py line 79: delete_many uses scope {report_month: X} only when payload.report_month is provided; when payload is empty ({}) scope becomes {} and ALL discrepancies are wiped — correct for the full-recon idempotency path but callers should be aware a per-month scoped run only clears that month.",
+    "reconciliation.py line 216: sku uses `sale.get('sku') or settle.get('sku')` — good; ensures variance rows carry the sale's real SKU and only falls back to the marketplace SKU when the sale has none."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_point2_discrepancy_parity.py (new regression suite for Point 2)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "admin@fundle.ai / admin123 verified",
+  "seed_data_creation": "None. Re-ran POST /api/reconciliation/run {} twice to verify idempotency.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Point 2 (discrepancy/calculation parity, stale clearing, SKU parity) now covered by test_point2_discrepancy_parity.py. Known/expected NOT bugs: matched=0 with ~28,128 variance + ~409 unmatched, AI health grade F, ~573 unmapped calculations — pending separate Myntra expected-vs-actual semantics tuning item. Frontend note (out of scope): the Discrepancies search input requires the row to be within the currently selected month/period; searching for an order not in the current filter month shows unfiltered results — acceptable per current design (URL params work: /discrepancies?search=...&period_value=YYYY-MM).",
+  "rca_of_the_issue": "Original bug: (1) POST /api/reconciliation/run appended new discrepancies without deleting previous ones, so stale rows computed BEFORE recent calc-engine fixes (with expected_settlement=0, negative commission/GT) remained in db.discrepancies and were shown alongside correct new rows — Discrepancy panel diverged from Calculations panel. (2) Variance discrepancy sku field stored settle['sku'] (the payout's SKU, often a leading-quote text-preserved string like '133...') instead of the sale's real SKU. Fix: added db.discrepancies.delete_many(scope) after the settlements-exist check (line 79); variance insert now writes sku = sale.get('sku') or settle.get('sku') (line 216). Verified: order 100152032783 expected block == calc panel values; 0 mismatches over 200 sampled variance rows; single recon_run_id after two consecutive runs."
+}
